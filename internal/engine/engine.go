@@ -82,6 +82,12 @@ func (e *RuleEngine) WithFeatureProvider(provider FeatureProvider) *RuleEngine {
 
 func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideResponse, error) {
 	started := time.Now()
+	select {
+	case <-ctx.Done():
+		return DecideResponse{}, ctx.Err()
+	default:
+	}
+
 	state := EvalState{Request: req}
 	if e.featureProvider != nil {
 		features, degraded := e.featureProvider.GetActorFeatures(ctx, req.ActorID)

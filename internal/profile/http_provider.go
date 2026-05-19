@@ -32,7 +32,8 @@ func NewHTTPFeatureProvider(baseURL string, timeout time.Duration, client *http.
 }
 
 func (p *HTTPFeatureProvider) GetActorFeatures(ctx context.Context, actorID string) (ActorFeatures, bool) {
-	if p == nil || p.baseURL == "" || strings.TrimSpace(actorID) == "" {
+	actorID = strings.TrimSpace(actorID)
+	if p == nil || p.baseURL == "" || actorID == "" {
 		return ActorFeatures{}, true
 	}
 

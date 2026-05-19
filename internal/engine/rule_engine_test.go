@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
@@ -66,6 +67,15 @@ func (p stubFeatureProvider) GetActorFeatures(context.Context, string) (engine.A
 	return p.features, p.degraded
 }
 
+type countingFeatureProvider struct {
+	calls int
+}
+
+func (p *countingFeatureProvider) GetActorFeatures(context.Context, string) (engine.ActorFeatures, bool) {
+	p.calls++
+	return engine.ActorFeatures{Publishes5M: 1}, false
+}
+
 func TestRuleEnginePopulatesEvalStateFromFeatureProvider(t *testing.T) {
 	rule := &captureStateRule{}
 	response, err := engine.NewRuleEngine("test", []engine.Rule{rule}).
@@ -96,5 +106,21 @@ func TestRuleEngineAddsWarningMetadataWhenFeatureProviderDegraded(t *testing.T) 
 	warnings, ok := response.Metadata["warnings"].([]string)
 	if !ok || len(warnings) != 1 || warnings[0] != "feature_provider_unavailable" {
 		t.Fatalf("unexpected metadata warnings: %#v", response.Metadata)
+	}
+}
+
+func TestRuleEngineCanceledContextSkipsFeatureProvider(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	provider := &countingFeatureProvider{}
+
+	_, err := engine.NewRuleEngine("test", nil).
+		WithFeatureProvider(provider).
+		Evaluate(ctx, engine.DecideRequest{ActorID: "actor-1"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("expected feature provider not to be called, got %d calls", provider.calls)
 	}
 }

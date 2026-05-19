@@ -66,6 +66,27 @@ func TestHTTPFeatureProviderParsesAggregatorResponse(t *testing.T) {
 	}
 }
 
+func TestHTTPFeatureProviderTrimsRequestedActorID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/features/actor-1" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"actor_id":"actor-1","publishes_5m":2}`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(context.Background(), " actor-1 ")
+
+	if degraded {
+		t.Fatalf("expected degraded=false")
+	}
+	if features.ActorID != "actor-1" || features.Publishes5M != 2 {
+		t.Fatalf("unexpected features: %+v", features)
+	}
+}
+
 func TestHTTPFeatureProviderFillsMissingActorID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
