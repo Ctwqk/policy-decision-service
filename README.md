@@ -15,7 +15,7 @@ The process reads environment variables directly; it does not automatically load
 set -a
 source config/server.example.env
 set +a
-PDS_RULES_PATH=config/rules.example.yaml PDS_BLOCKLIST_PATH=config/blocklist.example.txt go run ./cmd/server
+PDS_RULES_PATH=config/rules.example.yaml go run ./cmd/server
 ```
 
 ## HTTP
@@ -50,7 +50,7 @@ Request `context` and response `metadata` use `google.protobuf.Struct` so caller
 
 ## Rules And Reload
 
-Rules are loaded from `PDS_RULES_PATH`, defaulting to `config/rules.example.yaml`. Reload rules without restarting:
+Rules are loaded from `PDS_RULES_PATH`, defaulting to `config/rules.example.yaml`. Keyword rule files are declared per rule with `keywords_file` and are resolved relative to the rule file unless an absolute path is used. Reload rules without restarting:
 
 ```bash
 curl -sS -X POST http://localhost:8080/v1/admin/reload

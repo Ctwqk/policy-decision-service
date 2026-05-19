@@ -9,7 +9,6 @@ data:
   PDS_DATABASE_URL: "postgres://vp:vp_secret@postgres:5432/videoprocess?sslmode=disable"
   PDS_REDIS_URL: "redis://redis:6379/1"
   PDS_RULES_PATH: "/etc/pds/rules/rules.yaml"
-  PDS_BLOCKLIST_PATH: "/etc/pds/rules/blocklist.txt"
   PDS_FEATURE_PROVIDER_URL: "http://vp-feature-aggregator:8080"
   PDS_KAFKA_ENABLED: "true"
   PDS_KAFKA_BROKERS: "redpanda:9092"

@@ -14,7 +14,6 @@ type Config struct {
 	DatabaseURL            string
 	RedisURL               string
 	RulesPath              string
-	BlocklistPath          string
 	AuditQueueSize         int
 	AuditBatchSize         int
 	FailOpen               bool
@@ -35,7 +34,6 @@ func Load() Config {
 		DatabaseURL:            envString("PDS_DATABASE_URL", "postgres://vp:vp_secret@localhost:5435/videoprocess?sslmode=disable"),
 		RedisURL:               envString("PDS_REDIS_URL", "redis://localhost:6380/1"),
 		RulesPath:              envString("PDS_RULES_PATH", "config/rules.example.yaml"),
-		BlocklistPath:          envString("PDS_BLOCKLIST_PATH", "config/blocklist.example.txt"),
 		AuditQueueSize:         envInt("PDS_AUDIT_QUEUE_SIZE", 10000),
 		AuditBatchSize:         envInt("PDS_AUDIT_BATCH_SIZE", 100),
 		FailOpen:               envBool("PDS_FAIL_OPEN", true),
