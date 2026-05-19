@@ -3,6 +3,7 @@ package sink
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -46,6 +47,8 @@ type KafkaDecisionSink struct {
 	topic     string
 	queue     chan engine.AuditRecord
 	publisher Publisher
+	mu        sync.Mutex
+	closed    bool
 	dropped   atomic.Int64
 }
 
@@ -74,6 +77,11 @@ func (s *KafkaDecisionSink) Enqueue(ctx context.Context, record engine.AuditReco
 	if err := ctx.Err(); err != nil {
 		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
 	select {
 	case <-ctx.Done():
 		return
@@ -100,11 +108,13 @@ func (s *KafkaDecisionSink) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.close()
 			s.drain()
 			return
 		case record := <-s.queue:
 			s.updateQueueDepth()
 			if ctx.Err() != nil {
+				s.close()
 				s.drain(record)
 				return
 			}
@@ -114,6 +124,12 @@ func (s *KafkaDecisionSink) Run(ctx context.Context) {
 	}
 }
 
+func (s *KafkaDecisionSink) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+}
+
 func (s *KafkaDecisionSink) publishWithTimeout(record engine.AuditRecord) {
 	publishCtx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
@@ -121,14 +137,13 @@ func (s *KafkaDecisionSink) publishWithTimeout(record engine.AuditRecord) {
 }
 
 func (s *KafkaDecisionSink) drain(initial ...engine.AuditRecord) {
-	queued := len(s.queue)
 	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	for _, record := range initial {
 		s.publishAndCount(drainCtx, record)
 		s.updateQueueDepth()
 	}
-	for i := 0; i < queued; i++ {
+	for {
 		select {
 		case record := <-s.queue:
 			s.updateQueueDepth()

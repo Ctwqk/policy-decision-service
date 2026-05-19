@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,8 @@ type AuditWriter struct {
 	pool      *pgxpool.Pool
 	queue     chan engine.AuditRecord
 	batchSize int
+	mu        sync.Mutex
+	closed    bool
 	dropped   atomic.Int64
 }
 
@@ -39,6 +42,11 @@ func (w *AuditWriter) Enqueue(ctx context.Context, record engine.AuditRecord) {
 		return
 	}
 	if err := ctx.Err(); err != nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
 		return
 	}
 	select {
@@ -65,6 +73,7 @@ func (w *AuditWriter) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			w.close()
 			w.drainQueued(&batch)
 			flushCtx, cancel := context.WithTimeout(context.Background(), auditFinalFlushTimeout)
 			_ = w.flush(flushCtx, batch)
@@ -72,6 +81,14 @@ func (w *AuditWriter) Run(ctx context.Context) {
 			return
 		case record := <-w.queue:
 			batch = append(batch, record)
+			if ctx.Err() != nil {
+				w.close()
+				w.drainQueued(&batch)
+				flushCtx, cancel := context.WithTimeout(context.Background(), auditFinalFlushTimeout)
+				_ = w.flush(flushCtx, batch)
+				cancel()
+				return
+			}
 			if len(batch) >= w.batchSize {
 				if err := w.flush(ctx, batch); err == nil {
 					batch = batch[:0]
@@ -87,12 +104,17 @@ func (w *AuditWriter) Run(ctx context.Context) {
 	}
 }
 
+func (w *AuditWriter) close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.closed = true
+}
+
 func (w *AuditWriter) drainQueued(batch *[]engine.AuditRecord) {
 	if w == nil || w.queue == nil {
 		return
 	}
-	queued := len(w.queue)
-	for i := 0; i < queued; i++ {
+	for {
 		select {
 		case record := <-w.queue:
 			*batch = append(*batch, record)

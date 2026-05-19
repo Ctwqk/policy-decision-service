@@ -164,6 +164,23 @@ func TestKafkaDecisionSinkPublishIsIndependentFromLifecycleCancel(t *testing.T) 
 	}
 }
 
+func TestKafkaDecisionSinkRejectsEnqueueAfterRunStops(t *testing.T) {
+	publisher := &recordingPublisher{}
+	sink := NewKafkaDecisionSink(KafkaDecisionSinkConfig{Topic: "pds.decisions.v1", QueueSize: 1, Publisher: publisher})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sink.Run(ctx)
+
+	sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "late", ActorID: "actor-1"})
+
+	if queued := len(sink.queue); queued != 0 {
+		t.Fatalf("expected enqueue after shutdown to be rejected, queued=%d", queued)
+	}
+	if publisher.count() != 0 {
+		t.Fatalf("expected no publish after shutdown, got %d", publisher.count())
+	}
+}
+
 func TestKafkaDecisionSinkCountsPublishErrors(t *testing.T) {
 	sink := NewKafkaDecisionSink(KafkaDecisionSinkConfig{
 		Topic:     "pds.decisions.v1",
