@@ -60,7 +60,7 @@ The process also reloads rules on `SIGHUP`.
 
 ## Feature Provider
 
-Set `PDS_FEATURE_PROVIDER_URL` to enable actor feature enrichment, for example `http://vp-feature-aggregator:8080`. Feature-backed CEL rules can read fields such as `features.publishes_5m` and `degraded.feature_provider`.
+Set `PDS_FEATURE_PROVIDER_URL` to enable actor feature enrichment, for example `http://vp-feature-aggregator:8080`. PDS reads `GET /v1/features/{actor_id}` and maps fields including `features.publishes_5m`, `features.publishes_1h`, `features.publishes_24h`, `features.blocks_24h`, `features.flags_7d`, and `features.comment_burst_1m`. Feature-backed CEL rules can also check `degraded.feature_provider`; when the provider is unavailable, decisions fail open with zero-value features and a `feature_provider_unavailable` warning.
 
 ## Kafka Sink
 
@@ -70,9 +70,20 @@ Enable decision event publishing with:
 PDS_KAFKA_ENABLED=true
 PDS_KAFKA_BROKERS=redpanda:9092
 PDS_KAFKA_DECISION_TOPIC=pds.decisions.v1
+PDS_KAFKA_CLIENT_ID=pds
+PDS_KAFKA_QUEUE_SIZE=10000
 ```
 
-Kafka sinks are stopped after HTTP and gRPC shutdown so queued decisions can drain before publisher resources close.
+Kafka publishing is asynchronous and should not be treated as the durable audit store. Durable audit writes use Postgres when `PDS_DATABASE_URL` is reachable; Kafka publish errors and queue drops are exposed through metrics. Kafka sinks are stopped after HTTP and gRPC shutdown so queued decisions can drain before publisher resources close.
+
+## VideoProcess Compose Integration
+
+The VP repo owns the local compose wiring in `docker-compose.pds-kafka.yml`. From the VP worktree, run it with the base compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pds-kafka.yml config
+docker compose -f docker-compose.yml -f docker-compose.pds-kafka.yml up -d --build redpanda pds vp-feature-aggregator event-outbox-relay
+```
 
 ## Kubernetes
 
