@@ -4,14 +4,18 @@ import (
 	"context"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 )
 
 type Rule interface {
 	ID() string
 	Evaluate(context.Context, DecideRequest) (RuleResult, error)
+}
+
+type ResultAwareRule interface {
+	Rule
+	Dependencies() []string
+	EvaluateWithResults(context.Context, DecideRequest, map[string]RuleResult) (RuleResult, error)
 }
 
 type AllowEngine struct {
@@ -68,23 +72,27 @@ func (e *RuleEngine) WithAuditSink(sink AuditSink) *RuleEngine {
 
 func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideResponse, error) {
 	started := time.Now()
-	results := make([]RuleResult, len(e.rules))
-	group, ctx := errgroup.WithContext(ctx)
-	for idx, rule := range e.rules {
-		idx := idx
-		rule := rule
-		group.Go(func() error {
-			result, err := rule.Evaluate(ctx, req)
-			if err != nil {
-				results[idx] = RuleResult{RuleID: rule.ID(), Matched: false, Verdict: VerdictAllow, Err: err}
-				return nil
-			}
-			results[idx] = result
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		return DecideResponse{}, err
+	results := make([]RuleResult, 0, len(e.rules))
+	byID := make(map[string]RuleResult, len(e.rules))
+	for _, rule := range e.rules {
+		select {
+		case <-ctx.Done():
+			return DecideResponse{}, ctx.Err()
+		default:
+		}
+
+		var result RuleResult
+		var err error
+		if aware, ok := rule.(ResultAwareRule); ok {
+			result, err = aware.EvaluateWithResults(ctx, req, byID)
+		} else {
+			result, err = rule.Evaluate(ctx, req)
+		}
+		if err != nil {
+			result = RuleResult{RuleID: rule.ID(), Matched: false, Verdict: VerdictAllow, Err: err}
+		}
+		results = append(results, result)
+		byID[rule.ID()] = result
 	}
 
 	response := Combine(results)

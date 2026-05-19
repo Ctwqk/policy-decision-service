@@ -61,6 +61,55 @@ rules:
 	}
 }
 
+func TestLoadBytesRejectsCombinerCycles(t *testing.T) {
+	_, err := LoadBytes([]byte(`
+version: 1
+rules:
+  - id: combo_a
+    type: combiner
+    enabled: true
+    op: all
+    of: [combo_b]
+    on_match: {verdict: block, code: combo_a}
+  - id: combo_b
+    type: combiner
+    enabled: true
+    op: all
+    of: [combo_a]
+    on_match: {verdict: block, code: combo_b}
+`), LoaderOptions{})
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("expected combiner cycle error, got %v", err)
+	}
+}
+
+func TestLoadBytesBuildsCELAndCombinerInDependencyOrder(t *testing.T) {
+	snapshot, err := LoadBytes([]byte(`
+version: 1
+rules:
+  - id: combo
+    type: combiner
+    enabled: true
+    op: all
+    of: [new_actor_review]
+    on_match: {verdict: block, code: combo_block}
+  - id: new_actor_review
+    type: cel
+    enabled: true
+    expr: actor.age_days < 7 && action.type == "publish_video"
+    on_match: {verdict: flag, code: new_actor_pending_review}
+`), LoaderOptions{})
+	if err != nil {
+		t.Fatalf("load bytes: %v", err)
+	}
+	if len(snapshot.Rules) != 2 {
+		t.Fatalf("expected two rules, got %d", len(snapshot.Rules))
+	}
+	if snapshot.Rules[0].ID() != "new_actor_review" || snapshot.Rules[1].ID() != "combo" {
+		t.Fatalf("expected dependency order, got %s then %s", snapshot.Rules[0].ID(), snapshot.Rules[1].ID())
+	}
+}
+
 func TestLoadFileBuildsEnabledKeywordRuleAndSkipsDisabledRules(t *testing.T) {
 	dir := t.TempDir()
 	blocklistPath := filepath.Join(dir, "blocklist.txt")

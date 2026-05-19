@@ -43,3 +43,16 @@ type RateLimitRuleConfig struct {
 	OnExceed RuleAction
 	Now      func() time.Time
 }
+
+type CELRuleConfig struct {
+	ID      string
+	Expr    string
+	OnMatch RuleAction
+}
+
+type CombinerRuleConfig struct {
+	ID      string
+	Op      string
+	Of      []string
+	OnMatch RuleAction
+}

@@ -45,6 +45,7 @@ type rawRule struct {
 	Limit        int64      `yaml:"limit"`
 	Field        string     `yaml:"field"`
 	KeywordsFile string     `yaml:"keywords_file"`
+	Expr         string     `yaml:"expr"`
 	OnExceed     RuleAction `yaml:"on_exceed"`
 	OnMatch      RuleAction `yaml:"on_match"`
 	Op           string     `yaml:"op"`
@@ -99,8 +100,13 @@ func LoadBytes(data []byte, opts LoaderOptions) (Snapshot, error) {
 		}
 	}
 
-	built := make([]engine.Rule, 0, len(parsed.Rules))
-	for _, raw := range parsed.Rules {
+	ordered, err := orderRules(parsed.Rules)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	built := make([]engine.Rule, 0, len(ordered))
+	for _, raw := range ordered {
 		if !ruleEnabled(raw.Enabled) {
 			continue
 		}
@@ -161,12 +167,62 @@ func buildRule(raw rawRule, opts LoaderOptions) (engine.Rule, error) {
 			Now:      opts.Now,
 		}, opts.Redis)
 	case "cel":
-		return nil, fmt.Errorf("cel rule %s is not implemented until Phase 3", raw.ID)
+		return NewCELRule(CELRuleConfig{
+			ID:      raw.ID,
+			Expr:    raw.Expr,
+			OnMatch: raw.OnMatch,
+		})
 	case "combiner":
-		return nil, fmt.Errorf("combiner rule %s is not implemented until Phase 3", raw.ID)
+		return NewCombinerRule(CombinerRuleConfig{
+			ID:      raw.ID,
+			Op:      raw.Op,
+			Of:      raw.Of,
+			OnMatch: raw.OnMatch,
+		})
 	default:
 		return nil, fmt.Errorf("unknown rule type %q for %s", raw.Type, raw.ID)
 	}
+}
+
+func orderRules(raws []rawRule) ([]rawRule, error) {
+	byID := make(map[string]rawRule, len(raws))
+	for _, raw := range raws {
+		byID[raw.ID] = raw
+	}
+	ordered := make([]rawRule, 0, len(raws))
+	temporary := map[string]bool{}
+	permanent := map[string]bool{}
+	var visit func(string) error
+	visit = func(id string) error {
+		if permanent[id] {
+			return nil
+		}
+		if temporary[id] {
+			return fmt.Errorf("combiner cycle detected at %s", id)
+		}
+		raw, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("unknown referenced rule %q", id)
+		}
+		temporary[id] = true
+		if raw.Type == "combiner" {
+			for _, ref := range raw.Of {
+				if err := visit(ref); err != nil {
+					return err
+				}
+			}
+		}
+		temporary[id] = false
+		permanent[id] = true
+		ordered = append(ordered, raw)
+		return nil
+	}
+	for _, raw := range raws {
+		if err := visit(raw.ID); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 func readKeywords(path string, baseDir string) ([]string, error) {
