@@ -48,6 +48,8 @@ func main() {
 	logger := telemetry.NewLogger()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	sinkCtx, stopSinks := context.WithCancel(context.Background())
+	defer stopSinks()
 
 	postgres, pgErr := store.NewPostgres(ctx, cfg.DatabaseURL)
 	if pgErr != nil {
@@ -67,10 +69,14 @@ func main() {
 
 	featureProvider := profile.NewHTTPFeatureProvider(cfg.FeatureProviderURL, cfg.FeatureProviderTimeout, nil)
 	decisionSinks := make([]sink.DecisionSink, 0, 2)
-	var kafkaWG sync.WaitGroup
+	var sinksWG sync.WaitGroup
 	if postgres != nil {
 		auditWriter := store.NewAuditWriter(postgres.Pool(), cfg.AuditQueueSize, cfg.AuditBatchSize)
-		go auditWriter.Run(ctx)
+		sinksWG.Add(1)
+		go func() {
+			defer sinksWG.Done()
+			auditWriter.Run(sinkCtx)
+		}()
 		decisionSinks = append(decisionSinks, auditWriter)
 	}
 	var franzPublisher *sink.FranzPublisher
@@ -85,10 +91,10 @@ func main() {
 			QueueSize: cfg.KafkaQueueSize,
 			Publisher: franzPublisher,
 		})
-		kafkaWG.Add(1)
+		sinksWG.Add(1)
 		go func() {
-			defer kafkaWG.Done()
-			kafkaSink.Run(ctx)
+			defer sinksWG.Done()
+			kafkaSink.Run(sinkCtx)
 		}()
 		decisionSinks = append(decisionSinks, kafkaSink)
 	}
@@ -189,7 +195,8 @@ func main() {
 		logger.Fatal().Err(err).Msg("http server failed")
 	}
 	<-shutdownDone
-	kafkaWG.Wait()
+	stopSinks()
+	sinksWG.Wait()
 	if franzPublisher != nil {
 		franzPublisher.Close()
 	}

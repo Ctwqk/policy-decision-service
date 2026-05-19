@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const auditFinalFlushTimeout = 5 * time.Second
+
 type AuditWriter struct {
 	pool      *pgxpool.Pool
 	queue     chan engine.AuditRecord
@@ -60,7 +62,10 @@ func (w *AuditWriter) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = w.flush(context.Background(), batch)
+			w.drainQueued(&batch)
+			flushCtx, cancel := context.WithTimeout(context.Background(), auditFinalFlushTimeout)
+			_ = w.flush(flushCtx, batch)
+			cancel()
 			return
 		case record := <-w.queue:
 			batch = append(batch, record)
@@ -75,6 +80,21 @@ func (w *AuditWriter) Run(ctx context.Context) {
 					batch = batch[:0]
 				}
 			}
+		}
+	}
+}
+
+func (w *AuditWriter) drainQueued(batch *[]engine.AuditRecord) {
+	if w == nil || w.queue == nil {
+		return
+	}
+	queued := len(w.queue)
+	for i := 0; i < queued; i++ {
+		select {
+		case record := <-w.queue:
+			*batch = append(*batch, record)
+		default:
+			return
 		}
 	}
 }
