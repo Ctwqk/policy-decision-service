@@ -14,6 +14,7 @@ import (
 const (
 	defaultDecisionTopic     = "pds.decisions.v1"
 	defaultDecisionQueueSize = 10000
+	drainTimeout             = 5 * time.Second
 )
 
 type Publisher interface {
@@ -95,13 +96,39 @@ func (s *KafkaDecisionSink) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.drain()
 			return
 		case record := <-s.queue:
 			s.updateQueueDepth()
-			_ = s.publish(ctx, record)
+			s.publishAndCount(ctx, record)
 			s.updateQueueDepth()
 		}
 	}
+}
+
+func (s *KafkaDecisionSink) drain() {
+	queued := len(s.queue)
+	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancel()
+	for i := 0; i < queued; i++ {
+		select {
+		case record := <-s.queue:
+			s.updateQueueDepth()
+			s.publishAndCount(drainCtx, record)
+			s.updateQueueDepth()
+		case <-drainCtx.Done():
+			s.updateQueueDepth()
+			return
+		default:
+			s.updateQueueDepth()
+			return
+		}
+	}
+	s.updateQueueDepth()
+}
+
+func (s *KafkaDecisionSink) publishAndCount(ctx context.Context, record engine.AuditRecord) {
+	_ = s.publish(ctx, record)
 }
 
 func (s *KafkaDecisionSink) publish(ctx context.Context, record engine.AuditRecord) error {
@@ -123,9 +150,14 @@ func (s *KafkaDecisionSink) publish(ctx context.Context, record engine.AuditReco
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
+		telemetry.KafkaSinkPublishErrorsTotal.Inc()
 		return err
 	}
-	return s.publisher.Publish(ctx, s.topic, []byte(record.ActorID), payload)
+	if err := s.publisher.Publish(ctx, s.topic, []byte(record.ActorID), payload); err != nil {
+		telemetry.KafkaSinkPublishErrorsTotal.Inc()
+		return err
+	}
+	return nil
 }
 
 func (s *KafkaDecisionSink) updateQueueDepth() {

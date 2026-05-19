@@ -130,9 +130,11 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-hup:
-				if err := reload(context.Background()); err != nil {
+				reloadCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				if err := reload(reloadCtx); err != nil {
 					logger.Error().Err(err).Msg("rules reload failed")
 				}
+				cancel()
 			}
 		}
 	}()

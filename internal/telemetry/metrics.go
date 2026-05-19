@@ -53,6 +53,11 @@ var (
 		Help: "Total Kafka decision sink records dropped because the queue was full.",
 	})
 
+	KafkaSinkPublishErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "pds_kafka_sink_publish_errors_total",
+		Help: "Total Kafka decision sink publish errors.",
+	})
+
 	AuditWriteErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "pds_audit_write_errors_total",
 		Help: "Total audit write errors.",

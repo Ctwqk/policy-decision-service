@@ -65,13 +65,15 @@ func (w *AuditWriter) Run(ctx context.Context) {
 		case record := <-w.queue:
 			batch = append(batch, record)
 			if len(batch) >= w.batchSize {
-				_ = w.flush(ctx, batch)
-				batch = batch[:0]
+				if err := w.flush(ctx, batch); err == nil {
+					batch = batch[:0]
+				}
 			}
 		case <-ticker.C:
 			if len(batch) > 0 {
-				_ = w.flush(ctx, batch)
-				batch = batch[:0]
+				if err := w.flush(ctx, batch); err == nil {
+					batch = batch[:0]
+				}
 			}
 		}
 	}
@@ -81,10 +83,12 @@ func (w *AuditWriter) flush(ctx context.Context, records []engine.AuditRecord) e
 	for _, record := range records {
 		reasons, err := json.Marshal(record.Reasons)
 		if err != nil {
+			telemetry.AuditWriteErrorsTotal.Inc()
 			return err
 		}
 		request, err := json.Marshal(record.Request)
 		if err != nil {
+			telemetry.AuditWriteErrorsTotal.Inc()
 			return err
 		}
 		_, err = w.pool.Exec(ctx, `
