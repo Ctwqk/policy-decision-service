@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -66,6 +67,7 @@ func main() {
 
 	featureProvider := profile.NewHTTPFeatureProvider(cfg.FeatureProviderURL, cfg.FeatureProviderTimeout, nil)
 	decisionSinks := make([]sink.DecisionSink, 0, 2)
+	var kafkaWG sync.WaitGroup
 	if postgres != nil {
 		auditWriter := store.NewAuditWriter(postgres.Pool(), cfg.AuditQueueSize, cfg.AuditBatchSize)
 		go auditWriter.Run(ctx)
@@ -78,13 +80,16 @@ func main() {
 		if err != nil {
 			logger.Fatal().Err(err).Msg("kafka publisher init failed")
 		}
-		defer franzPublisher.Close()
 		kafkaSink := sink.NewKafkaDecisionSink(sink.KafkaDecisionSinkConfig{
 			Topic:     cfg.KafkaDecisionTopic,
 			QueueSize: cfg.KafkaQueueSize,
 			Publisher: franzPublisher,
 		})
-		go kafkaSink.Run(ctx)
+		kafkaWG.Add(1)
+		go func() {
+			defer kafkaWG.Done()
+			kafkaSink.Run(ctx)
+		}()
 		decisionSinks = append(decisionSinks, kafkaSink)
 	}
 	var decisionSink engine.AuditSink
@@ -110,10 +115,16 @@ func main() {
 	}
 	holder := newEngineHolder(buildEngine(snapshot))
 	reload := func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		snapshot, err := rules.LoadFile(cfg.RulesPath, rules.LoaderOptions{
 			Redis: redisStore.Client(),
 		})
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		holder.Store(buildEngine(snapshot))
@@ -162,7 +173,9 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -174,5 +187,10 @@ func main() {
 	logger.Info().Str("addr", cfg.HTTPAddr).Msg("starting pds http server")
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatal().Err(err).Msg("http server failed")
+	}
+	<-shutdownDone
+	kafkaWG.Wait()
+	if franzPublisher != nil {
+		franzPublisher.Close()
 	}
 }

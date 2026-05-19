@@ -2,9 +2,12 @@ package sink
 
 import (
 	"context"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+const franzPublishTimeout = 5 * time.Second
 
 type FranzPublisher struct {
 	client *kgo.Client
@@ -23,7 +26,9 @@ func NewFranzPublisher(brokers []string, clientID string) (*FranzPublisher, erro
 }
 
 func (p *FranzPublisher) Publish(ctx context.Context, topic string, key []byte, value []byte) error {
-	return p.client.ProduceSync(ctx, &kgo.Record{Topic: topic, Key: key, Value: value}).FirstErr()
+	publishCtx, cancel := context.WithTimeout(ctx, franzPublishTimeout)
+	defer cancel()
+	return p.client.ProduceSync(publishCtx, &kgo.Record{Topic: topic, Key: key, Value: value}).FirstErr()
 }
 
 func (p *FranzPublisher) Close() {
