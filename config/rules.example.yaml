@@ -6,7 +6,7 @@ rules:
     type: rate_limit
     enabled: true
     scope: actor
-    action: publish_video
+    action: publish
     window: 1h
     limit: 2
     on_exceed:
