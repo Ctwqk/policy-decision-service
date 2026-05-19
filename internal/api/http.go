@@ -20,6 +20,7 @@ type DecisionEngine interface {
 type Dependencies struct {
 	Engine DecisionEngine
 	Ready  func(context.Context) error
+	Reload func(context.Context) error
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -29,12 +30,16 @@ func NewRouter(deps Dependencies) http.Handler {
 	if deps.Ready == nil {
 		deps.Ready = func(context.Context) error { return nil }
 	}
+	if deps.Reload == nil {
+		deps.Reload = func(context.Context) error { return nil }
+	}
 
 	r := chi.NewRouter()
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", readyz(deps.Ready))
 	r.Handle("/metrics", promhttp.Handler())
 	r.Post("/v1/decide", decide(deps.Engine))
+	r.Post("/v1/admin/reload", reload(deps.Reload))
 	return r
 }
 
@@ -87,6 +92,18 @@ func decide(decisionEngine DecisionEngine) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func reload(fn func(context.Context) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := fn(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded"})
 	}
 }
 

@@ -2,9 +2,12 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
+	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestCombinerRuleAllRequiresEveryReferencedMatch(t *testing.T) {
@@ -88,5 +91,30 @@ func TestCombinerRuleTreatsErroredDependencyAsSkipped(t *testing.T) {
 	}
 	if result.Reason.Detail != "skipped_dep=cel_burst status=dependency_error" {
 		t.Fatalf("unexpected skipped dependency detail: %#v", result.Reason)
+	}
+}
+
+func TestCombinerRuleIncrementsDependencyErrorMetric(t *testing.T) {
+	rule, err := NewCombinerRule(CombinerRuleConfig{
+		ID:      "combo_rule",
+		Op:      "all",
+		Of:      []string{"dep_rule"},
+		OnMatch: RuleAction{Verdict: engine.VerdictBlock, Code: "combo_block"},
+	})
+	if err != nil {
+		t.Fatalf("new combiner: %v", err)
+	}
+
+	counter := telemetry.CombinerDepErrorsTotal.WithLabelValues("combo_rule", "dep_rule")
+	before := testutil.ToFloat64(counter)
+	_, err = rule.EvaluateWithResults(context.Background(), engine.EvalState{}, map[string]engine.RuleResult{
+		"dep_rule": {RuleID: "dep_rule", Matched: true, Verdict: engine.VerdictFlag, Err: errors.New("dependency failed")},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	after := testutil.ToFloat64(counter)
+	if after-before != 1 {
+		t.Fatalf("expected dependency error metric increment of 1, got before=%v after=%v", before, after)
 	}
 }

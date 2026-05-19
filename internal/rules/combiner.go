@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
+	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
 )
 
 type CombinerRule struct {
@@ -66,6 +67,7 @@ func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.EvalSta
 			return engine.RuleResult{}, errors.New("combiner dependency has not been evaluated")
 		}
 		if result.Err != nil {
+			telemetry.CombinerDepErrorsTotal.WithLabelValues(r.id, ref).Inc()
 			skipped = append(skipped, "skipped_dep="+ref+" status=dependency_error")
 			continue
 		}

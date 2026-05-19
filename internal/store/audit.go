@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
+	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -108,6 +109,7 @@ INSERT INTO pds.decisions (
 			emptyStringToNil(record.Client),
 		)
 		if err != nil {
+			telemetry.AuditWriteErrorsTotal.Inc()
 			return err
 		}
 	}

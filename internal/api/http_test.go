@@ -58,6 +58,26 @@ func TestMetricsEndpointReturnsPrometheusText(t *testing.T) {
 	}
 }
 
+func TestAdminReloadCallsReloadFunction(t *testing.T) {
+	called := false
+	router := api.NewRouter(api.Dependencies{
+		Engine: engine.NewAllowEngine("test"),
+		Reload: func(context.Context) error {
+			called = true
+			return nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/reload", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.Code)
+	}
+	if !called {
+		t.Fatalf("expected reload function to be called")
+	}
+}
+
 func TestDecideRequiresClientID(t *testing.T) {
 	router := api.NewRouter(api.Dependencies{
 		Engine: engine.NewAllowEngine("bootstrap"),

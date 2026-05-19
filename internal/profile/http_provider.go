@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
 )
 
 const defaultHTTPFeatureTimeout = 100 * time.Millisecond
@@ -31,7 +33,15 @@ func NewHTTPFeatureProvider(baseURL string, timeout time.Duration, client *http.
 	}
 }
 
-func (p *HTTPFeatureProvider) GetActorFeatures(ctx context.Context, actorID string) (ActorFeatures, bool) {
+func (p *HTTPFeatureProvider) GetActorFeatures(ctx context.Context, actorID string) (features ActorFeatures, degraded bool) {
+	started := time.Now()
+	defer func() {
+		telemetry.FeatureLookupLatencySeconds.Observe(time.Since(started).Seconds())
+		if degraded {
+			telemetry.FeatureLookupDegradedTotal.Inc()
+		}
+	}()
+
 	actorID = strings.TrimSpace(actorID)
 	if p == nil || p.baseURL == "" || actorID == "" {
 		return ActorFeatures{}, true
@@ -56,7 +66,6 @@ func (p *HTTPFeatureProvider) GetActorFeatures(ctx context.Context, actorID stri
 		return ActorFeatures{}, true
 	}
 
-	var features ActorFeatures
 	if err := json.NewDecoder(resp.Body).Decode(&features); err != nil {
 		return ActorFeatures{}, true
 	}

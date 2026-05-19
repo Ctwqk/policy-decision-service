@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"strconv"
 	"time"
 
+	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
 	"github.com/google/uuid"
 )
 
@@ -40,7 +42,7 @@ func (e *AllowEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRe
 		return DecideResponse{}, ctx.Err()
 	default:
 	}
-	return DecideResponse{
+	response := DecideResponse{
 		DecisionID:     uuid.NewString(),
 		Verdict:        VerdictAllow,
 		Score:          0,
@@ -48,7 +50,10 @@ func (e *AllowEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRe
 		EvaluatedRules: []string{},
 		RulesVersion:   e.rulesVersion,
 		LatencyMS:      time.Since(started).Milliseconds(),
-	}, nil
+	}
+	telemetry.DecisionLatencySeconds.WithLabelValues(req.Action.Type).Observe(time.Since(started).Seconds())
+	telemetry.DecisionsTotal.WithLabelValues(string(VerdictAllow), req.Action.Type, req.ClientID).Inc()
+	return response, nil
 }
 
 type RuleEngine struct {
@@ -116,12 +121,16 @@ func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRes
 		}
 		if err != nil {
 			result = RuleResult{RuleID: rule.ID(), Matched: false, Verdict: VerdictAllow, Err: err}
+			telemetry.RuleEvalErrorsTotal.WithLabelValues(rule.ID()).Inc()
 		}
+		telemetry.RuleEvaluationsTotal.WithLabelValues(rule.ID(), strconv.FormatBool(result.Matched)).Inc()
 		results = append(results, result)
 		byID[rule.ID()] = result
 	}
 
 	response := Combine(results)
+	telemetry.DecisionLatencySeconds.WithLabelValues(req.Action.Type).Observe(time.Since(started).Seconds())
+	telemetry.DecisionsTotal.WithLabelValues(string(response.Verdict), req.Action.Type, req.ClientID).Inc()
 	response.DecisionID = uuid.NewString()
 	response.RulesVersion = e.rulesVersion
 	response.LatencyMS = time.Since(started).Milliseconds()
