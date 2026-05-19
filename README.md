@@ -5,11 +5,18 @@ Policy Decision Service (PDS) evaluates publication and moderation requests with
 ## Quickstart
 
 ```bash
-cp config/server.example.env .env
 go run ./cmd/server
 ```
 
 By default the server listens on `:8080` for HTTP and `:9090` for gRPC, loads rules from `config/rules.example.yaml`, and exposes `/healthz`, `/readyz`, and `/metrics`.
+The process reads environment variables directly; it does not automatically load `.env` files. To run with `config/server.example.env`, source it in the shell and override the rule paths for a repo-local run:
+
+```bash
+set -a
+source config/server.example.env
+set +a
+PDS_RULES_PATH=config/rules.example.yaml PDS_BLOCKLIST_PATH=config/blocklist.example.txt go run ./cmd/server
+```
 
 ## HTTP
 
@@ -39,6 +46,7 @@ PATH="$(go env GOPATH)/bin:$PATH" buf generate
 ```
 
 The `PolicyDecisionService.Decide` RPC maps to the same engine and response fields as HTTP. gRPC requests use client id `grpc` for metrics and audit records.
+Request `context` and response `metadata` use `google.protobuf.Struct` so callers can preserve JSON-like nested objects, arrays, booleans, numbers, and strings.
 
 ## Rules And Reload
 
@@ -74,12 +82,15 @@ Apply the sample manifest for the `videoprocess` namespace:
 kubectl apply -f deploy/kubernetes.yaml
 ```
 
-It creates `pds-config`, a single-replica `pds` Deployment, and a Service exposing `8080/http` and `9090/grpc`.
+It creates sample `pds-config` and `pds-rules` ConfigMaps, a single-replica `pds` Deployment, and a Service exposing `8080/http` and `9090/grpc`. The manifest is local/sample wiring: adjust the image, database URL, Redis URL, Kafka brokers, feature-provider URL, and rule content for the target cluster, and move credentials such as `PDS_DATABASE_URL` into a Secret before production use.
 
 ## Tests
 
 ```bash
+PATH="$(go env GOPATH)/bin:$PATH" buf generate
+buf lint
 gofmt -w cmd internal proto
 go test ./... -count=1
 go build ./cmd/server
+git diff --check
 ```

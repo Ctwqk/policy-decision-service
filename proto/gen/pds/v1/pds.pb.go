@@ -9,6 +9,7 @@ package pdsv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -26,7 +27,7 @@ type DecideRequest struct {
 	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	Action        *Action                `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
 	Content       *Content               `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	Context       map[string]string      `protobuf:"bytes,4,rep,name=context,proto3" json:"context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Context       *structpb.Struct       `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,7 +83,7 @@ func (x *DecideRequest) GetContent() *Content {
 	return nil
 }
 
-func (x *DecideRequest) GetContext() map[string]string {
+func (x *DecideRequest) GetContext() *structpb.Struct {
 	if x != nil {
 		return x.Context
 	}
@@ -278,6 +279,7 @@ type DecideResponse struct {
 	EvaluatedRules []string               `protobuf:"bytes,5,rep,name=evaluated_rules,json=evaluatedRules,proto3" json:"evaluated_rules,omitempty"`
 	RulesVersion   string                 `protobuf:"bytes,6,opt,name=rules_version,json=rulesVersion,proto3" json:"rules_version,omitempty"`
 	LatencyMs      int64                  `protobuf:"varint,7,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	Metadata       *structpb.Struct       `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -361,19 +363,23 @@ func (x *DecideResponse) GetLatencyMs() int64 {
 	return 0
 }
 
+func (x *DecideResponse) GetMetadata() *structpb.Struct {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_pds_v1_pds_proto protoreflect.FileDescriptor
 
 const file_pds_v1_pds_proto_rawDesc = "" +
 	"\n" +
-	"\x10pds/v1/pds.proto\x12\x06pds.v1\"\xf7\x01\n" +
+	"\x10pds/v1/pds.proto\x12\x06pds.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xb0\x01\n" +
 	"\rDecideRequest\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12&\n" +
 	"\x06action\x18\x02 \x01(\v2\x0e.pds.v1.ActionR\x06action\x12)\n" +
-	"\acontent\x18\x03 \x01(\v2\x0f.pds.v1.ContentR\acontent\x12<\n" +
-	"\acontext\x18\x04 \x03(\v2\".pds.v1.DecideRequest.ContextEntryR\acontext\x1a:\n" +
-	"\fContextEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"8\n" +
+	"\acontent\x18\x03 \x01(\v2\x0f.pds.v1.ContentR\acontent\x121\n" +
+	"\acontext\x18\x04 \x01(\v2\x17.google.protobuf.StructR\acontext\"8\n" +
 	"\x06Action\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
 	"\bplatform\x18\x02 \x01(\tR\bplatform\"t\n" +
@@ -386,7 +392,7 @@ const file_pds_v1_pds_proto_rawDesc = "" +
 	"\x06Reason\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x12\n" +
 	"\x04rule\x18\x02 \x01(\tR\x04rule\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xf8\x01\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xad\x02\n" +
 	"\x0eDecideResponse\x12\x1f\n" +
 	"\vdecision_id\x18\x01 \x01(\tR\n" +
 	"decisionId\x12\x18\n" +
@@ -396,7 +402,8 @@ const file_pds_v1_pds_proto_rawDesc = "" +
 	"\x0fevaluated_rules\x18\x05 \x03(\tR\x0eevaluatedRules\x12#\n" +
 	"\rrules_version\x18\x06 \x01(\tR\frulesVersion\x12\x1d\n" +
 	"\n" +
-	"latency_ms\x18\a \x01(\x03R\tlatencyMs2P\n" +
+	"latency_ms\x18\a \x01(\x03R\tlatencyMs\x123\n" +
+	"\bmetadata\x18\b \x01(\v2\x17.google.protobuf.StructR\bmetadata2P\n" +
 	"\x15PolicyDecisionService\x127\n" +
 	"\x06Decide\x12\x15.pds.v1.DecideRequest\x1a\x16.pds.v1.DecideResponseBAZ?github.com/Ctwqk/policy-decision-service/proto/gen/pds/v1;pdsv1b\x06proto3"
 
@@ -412,27 +419,28 @@ func file_pds_v1_pds_proto_rawDescGZIP() []byte {
 	return file_pds_v1_pds_proto_rawDescData
 }
 
-var file_pds_v1_pds_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_pds_v1_pds_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_pds_v1_pds_proto_goTypes = []any{
-	(*DecideRequest)(nil),  // 0: pds.v1.DecideRequest
-	(*Action)(nil),         // 1: pds.v1.Action
-	(*Content)(nil),        // 2: pds.v1.Content
-	(*Reason)(nil),         // 3: pds.v1.Reason
-	(*DecideResponse)(nil), // 4: pds.v1.DecideResponse
-	nil,                    // 5: pds.v1.DecideRequest.ContextEntry
+	(*DecideRequest)(nil),   // 0: pds.v1.DecideRequest
+	(*Action)(nil),          // 1: pds.v1.Action
+	(*Content)(nil),         // 2: pds.v1.Content
+	(*Reason)(nil),          // 3: pds.v1.Reason
+	(*DecideResponse)(nil),  // 4: pds.v1.DecideResponse
+	(*structpb.Struct)(nil), // 5: google.protobuf.Struct
 }
 var file_pds_v1_pds_proto_depIdxs = []int32{
 	1, // 0: pds.v1.DecideRequest.action:type_name -> pds.v1.Action
 	2, // 1: pds.v1.DecideRequest.content:type_name -> pds.v1.Content
-	5, // 2: pds.v1.DecideRequest.context:type_name -> pds.v1.DecideRequest.ContextEntry
+	5, // 2: pds.v1.DecideRequest.context:type_name -> google.protobuf.Struct
 	3, // 3: pds.v1.DecideResponse.reasons:type_name -> pds.v1.Reason
-	0, // 4: pds.v1.PolicyDecisionService.Decide:input_type -> pds.v1.DecideRequest
-	4, // 5: pds.v1.PolicyDecisionService.Decide:output_type -> pds.v1.DecideResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 4: pds.v1.DecideResponse.metadata:type_name -> google.protobuf.Struct
+	0, // 5: pds.v1.PolicyDecisionService.Decide:input_type -> pds.v1.DecideRequest
+	4, // 6: pds.v1.PolicyDecisionService.Decide:output_type -> pds.v1.DecideResponse
+	6, // [6:7] is the sub-list for method output_type
+	5, // [5:6] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_pds_v1_pds_proto_init() }
@@ -446,7 +454,7 @@ func file_pds_v1_pds_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pds_v1_pds_proto_rawDesc), len(file_pds_v1_pds_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

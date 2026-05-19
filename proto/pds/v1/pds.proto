@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package pds.v1;
 
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/Ctwqk/policy-decision-service/proto/gen/pds/v1;pdsv1";
 
 service PolicyDecisionService {
@@ -12,7 +14,7 @@ message DecideRequest {
   string actor_id = 1;
   Action action = 2;
   Content content = 3;
-  map<string, string> context = 4;
+  google.protobuf.Struct context = 4;
 }
 
 message Action {
@@ -41,4 +43,5 @@ message DecideResponse {
   repeated string evaluated_rules = 5;
   string rules_version = 6;
   int64 latency_ms = 7;
+  google.protobuf.Struct metadata = 8;
 }

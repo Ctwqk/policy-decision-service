@@ -6,10 +6,55 @@ metadata:
 data:
   PDS_HTTP_ADDR: ":8080"
   PDS_GRPC_ADDR: ":9090"
+  PDS_DATABASE_URL: "postgres://vp:vp_secret@postgres:5432/videoprocess?sslmode=disable"
+  PDS_REDIS_URL: "redis://redis:6379/1"
+  PDS_RULES_PATH: "/etc/pds/rules/rules.yaml"
+  PDS_BLOCKLIST_PATH: "/etc/pds/rules/blocklist.txt"
   PDS_FEATURE_PROVIDER_URL: "http://vp-feature-aggregator:8080"
   PDS_KAFKA_ENABLED: "true"
   PDS_KAFKA_BROKERS: "redpanda:9092"
   PDS_KAFKA_DECISION_TOPIC: "pds.decisions.v1"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pds-rules
+  namespace: videoprocess
+data:
+  rules.yaml: |
+    version: 1
+    defaults:
+      on_eval_error: allow
+    rules:
+      - id: rate_limit_publish_hourly
+        type: rate_limit
+        enabled: true
+        scope: actor
+        action: publish_video
+        window: 1h
+        limit: 2
+        on_exceed:
+          verdict: block
+          code: hourly_publish_quota_exceeded
+
+      - id: title_keyword_blocklist
+        type: keyword_match
+        enabled: true
+        field: content.title
+        keywords_file: /etc/pds/rules/blocklist.txt
+        on_match:
+          verdict: block
+          code: title_blocked_keyword
+
+      - id: burst_publish_feature_flag
+        type: cel
+        enabled: true
+        expr: "action.type == 'publish' && features.publishes_5m >= 3 && !degraded.feature_provider"
+        on_match:
+          verdict: flag
+          code: publishing_burst
+  blocklist.txt: |
+    blocked-example
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -37,6 +82,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: pds-config
+          volumeMounts:
+            - name: pds-rules
+              mountPath: /etc/pds/rules
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /readyz
@@ -45,6 +94,10 @@ spec:
             httpGet:
               path: /healthz
               port: http
+      volumes:
+        - name: pds-rules
+          configMap:
+            name: pds-rules
 ---
 apiVersion: v1
 kind: Service

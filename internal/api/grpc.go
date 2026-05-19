@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
 	pdsv1 "github.com/Ctwqk/policy-decision-service/proto/gen/pds/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type policyDecisionGRPCServer struct {
@@ -40,9 +42,9 @@ func (s *policyDecisionGRPCServer) Decide(ctx context.Context, req *pdsv1.Decide
 }
 
 func grpcRequestToEngine(req *pdsv1.DecideRequest) engine.DecideRequest {
-	contextMap := make(map[string]any, len(req.GetContext()))
-	for key, value := range req.GetContext() {
-		contextMap[key] = value
+	var contextMap map[string]any
+	if req.GetContext() != nil {
+		contextMap = req.GetContext().AsMap()
 	}
 	return engine.DecideRequest{
 		ActorID: req.GetActorId(),
@@ -70,6 +72,7 @@ func engineResponseToGRPC(response engine.DecideResponse) *pdsv1.DecideResponse 
 			Detail: reason.Detail,
 		})
 	}
+	metadata := mapToStruct(response.Metadata)
 	return &pdsv1.DecideResponse{
 		DecisionId:     response.DecisionID,
 		Verdict:        string(response.Verdict),
@@ -78,5 +81,33 @@ func engineResponseToGRPC(response engine.DecideResponse) *pdsv1.DecideResponse 
 		EvaluatedRules: response.EvaluatedRules,
 		RulesVersion:   response.RulesVersion,
 		LatencyMs:      response.LatencyMS,
+		Metadata:       metadata,
 	}
+}
+
+func mapToStruct(values map[string]any) *structpb.Struct {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized, err := normalizeJSONMap(values)
+	if err != nil {
+		return nil
+	}
+	out, err := structpb.NewStruct(normalized)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+func normalizeJSONMap(values map[string]any) (map[string]any, error) {
+	data, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	var normalized map[string]any
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		return nil, err
+	}
+	return normalized, nil
 }
