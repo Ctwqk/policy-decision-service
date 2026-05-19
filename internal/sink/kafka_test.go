@@ -18,6 +18,8 @@ type recordingPublisher struct {
 	payloads             [][]byte
 	err                  error
 	published            chan struct{}
+	publishStarted       chan struct{}
+	continuePublish      chan struct{}
 	failCanceledCtx      bool
 	canceledCtxPublishes int
 }
@@ -26,6 +28,19 @@ func (p *recordingPublisher) Publish(ctx context.Context, topic string, key []by
 	p.mu.Lock()
 	p.payloads = append(p.payloads, append([]byte(nil), value...))
 	published := p.published
+	publishStarted := p.publishStarted
+	continuePublish := p.continuePublish
+	p.mu.Unlock()
+	if publishStarted != nil {
+		select {
+		case publishStarted <- struct{}{}:
+		default:
+		}
+	}
+	if continuePublish != nil {
+		<-continuePublish
+	}
+	p.mu.Lock()
 	ctxErr := ctx.Err()
 	if ctxErr != nil {
 		p.canceledCtxPublishes++
@@ -114,6 +129,38 @@ func TestKafkaDecisionSinkDrainsQueuedRecordsOnCancel(t *testing.T) {
 		if publisher.canceledContextPublishes() != 0 {
 			t.Fatalf("expected drain not to publish with canceled service context, got %d canceled publishes", publisher.canceledContextPublishes())
 		}
+	}
+}
+
+func TestKafkaDecisionSinkPublishIsIndependentFromLifecycleCancel(t *testing.T) {
+	publisher := &recordingPublisher{
+		failCanceledCtx: true,
+		publishStarted:  make(chan struct{}, 1),
+		continuePublish: make(chan struct{}),
+	}
+	sink := NewKafkaDecisionSink(KafkaDecisionSinkConfig{Topic: "pds.decisions.v1", QueueSize: 1, Publisher: publisher})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sink.Run(ctx)
+	}()
+
+	sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "one", ActorID: "actor-1"})
+	select {
+	case <-publisher.publishStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("timed out waiting for publish to start")
+	}
+	cancel()
+	close(publisher.continuePublish)
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("timed out waiting for sink to stop")
+	}
+	if publisher.canceledContextPublishes() != 0 {
+		t.Fatalf("expected in-flight publish not to use canceled lifecycle context, got %d canceled publishes", publisher.canceledContextPublishes())
 	}
 }
 

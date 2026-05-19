@@ -14,6 +14,7 @@ import (
 const (
 	defaultDecisionTopic     = "pds.decisions.v1"
 	defaultDecisionQueueSize = 10000
+	publishTimeout           = 5 * time.Second
 	drainTimeout             = 5 * time.Second
 )
 
@@ -70,6 +71,9 @@ func (s *KafkaDecisionSink) Enqueue(ctx context.Context, record engine.AuditReco
 	if s == nil || s.queue == nil {
 		return
 	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
 	select {
 	case <-ctx.Done():
 		return
@@ -104,10 +108,16 @@ func (s *KafkaDecisionSink) Run(ctx context.Context) {
 				s.drain(record)
 				return
 			}
-			s.publishAndCount(ctx, record)
+			s.publishWithTimeout(record)
 			s.updateQueueDepth()
 		}
 	}
+}
+
+func (s *KafkaDecisionSink) publishWithTimeout(record engine.AuditRecord) {
+	publishCtx, cancel := context.WithTimeout(context.Background(), publishTimeout)
+	defer cancel()
+	s.publishAndCount(publishCtx, record)
 }
 
 func (s *KafkaDecisionSink) drain(initial ...engine.AuditRecord) {

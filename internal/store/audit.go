@@ -38,6 +38,9 @@ func (w *AuditWriter) Enqueue(ctx context.Context, record engine.AuditRecord) {
 	if w == nil || w.pool == nil {
 		return
 	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
 	select {
 	case w.queue <- record:
 	default:

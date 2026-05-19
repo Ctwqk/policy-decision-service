@@ -187,6 +187,9 @@ func main() {
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error().Err(err).Msg("http shutdown failed")
+			if closeErr := server.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				logger.Error().Err(closeErr).Msg("http close failed")
+			}
 		}
 	}()
 
