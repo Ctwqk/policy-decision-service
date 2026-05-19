@@ -86,7 +86,7 @@ func TestCombinerRuleTreatsErroredDependencyAsSkipped(t *testing.T) {
 	if result.Matched {
 		t.Fatalf("expected errored dependency not to match, got %#v", result)
 	}
-	if result.Reason.Detail != "skipped_dep=cel_burst err=context deadline exceeded" {
+	if result.Reason.Detail != "skipped_dep=cel_burst status=dependency_error" {
 		t.Fatalf("unexpected skipped dependency detail: %#v", result.Reason)
 	}
 }

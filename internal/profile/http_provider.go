@@ -61,6 +61,8 @@ func (p *HTTPFeatureProvider) GetActorFeatures(ctx context.Context, actorID stri
 	}
 	if features.ActorID == "" {
 		features.ActorID = actorID
+	} else if features.ActorID != actorID {
+		return ActorFeatures{}, true
 	}
 	return features, false
 }

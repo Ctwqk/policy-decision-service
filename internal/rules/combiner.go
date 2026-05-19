@@ -66,7 +66,7 @@ func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.EvalSta
 			return engine.RuleResult{}, errors.New("combiner dependency has not been evaluated")
 		}
 		if result.Err != nil {
-			skipped = append(skipped, "skipped_dep="+ref+" err="+result.Err.Error())
+			skipped = append(skipped, "skipped_dep="+ref+" status=dependency_error")
 			continue
 		}
 		if result.Matched {

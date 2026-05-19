@@ -65,3 +65,94 @@ func TestHTTPFeatureProviderParsesAggregatorResponse(t *testing.T) {
 		t.Fatalf("unexpected features: %+v", features)
 	}
 }
+
+func TestHTTPFeatureProviderFillsMissingActorID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"publishes_5m":2}`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(context.Background(), "actor-1")
+
+	if degraded {
+		t.Fatalf("expected degraded=false")
+	}
+	if features.ActorID != "actor-1" || features.Publishes5M != 2 {
+		t.Fatalf("unexpected features: %+v", features)
+	}
+}
+
+func TestHTTPFeatureProviderFailsOpenOnActorIDMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"actor_id":"actor-2","publishes_5m":9}`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(context.Background(), "actor-1")
+
+	if !degraded {
+		t.Fatalf("expected degraded=true")
+	}
+	if features != (ActorFeatures{}) {
+		t.Fatalf("expected zero-value fail-open features, got %+v", features)
+	}
+}
+
+func TestHTTPFeatureProviderFailsOpenOnNon2xx(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(context.Background(), "actor-1")
+
+	if !degraded {
+		t.Fatalf("expected degraded=true")
+	}
+	if features != (ActorFeatures{}) {
+		t.Fatalf("expected zero-value fail-open features, got %+v", features)
+	}
+}
+
+func TestHTTPFeatureProviderFailsOpenOnMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"actor_id":`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(context.Background(), "actor-1")
+
+	if !degraded {
+		t.Fatalf("expected degraded=true")
+	}
+	if features != (ActorFeatures{}) {
+		t.Fatalf("expected zero-value fail-open features, got %+v", features)
+	}
+}
+
+func TestHTTPFeatureProviderFailsOpenOnContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not reach server after context cancellation")
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	provider := NewHTTPFeatureProvider(server.URL, 200*time.Millisecond, server.Client())
+	features, degraded := provider.GetActorFeatures(ctx, "actor-1")
+
+	if !degraded {
+		t.Fatalf("expected degraded=true")
+	}
+	if features != (ActorFeatures{}) {
+		t.Fatalf("expected zero-value fail-open features, got %+v", features)
+	}
+}
