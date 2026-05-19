@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package pds.v1;
+
+option go_package = "github.com/Ctwqk/policy-decision-service/proto/gen/pds/v1;pdsv1";
+
+service PolicyDecisionService {
+  rpc Decide(DecideRequest) returns (DecideResponse);
+}
+
+message DecideRequest {
+  string actor_id = 1;
+  Action action = 2;
+  Content content = 3;
+  map<string, string> context = 4;
+}
+
+message Action {
+  string type = 1;
+  string platform = 2;
+}
+
+message Content {
+  string title = 1;
+  string description = 2;
+  int32 duration_s = 3;
+  repeated string tags = 4;
+}
+
+message Reason {
+  string code = 1;
+  string rule = 2;
+  string detail = 3;
+}
+
+message DecideResponse {
+  string decision_id = 1;
+  string verdict = 2;
+  double score = 3;
+  repeated Reason reasons = 4;
+  repeated string evaluated_rules = 5;
+  string rules_version = 6;
+  int64 latency_ms = 7;
+}

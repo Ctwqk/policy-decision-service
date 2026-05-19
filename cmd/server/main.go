@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/Ctwqk/policy-decision-service/internal/sink"
 	"github.com/Ctwqk/policy-decision-service/internal/store"
 	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
+	"google.golang.org/grpc"
 )
 
 type engineHolder struct {
@@ -178,6 +180,11 @@ func main() {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	grpcServer := api.NewGRPCServer(holder)
+	grpcListener, err := net.Listen("tcp", cfg.GRPCAddr)
+	if err != nil {
+		logger.Fatal().Err(err).Str("addr", cfg.GRPCAddr).Msg("grpc listen failed")
+	}
 
 	shutdownDone := make(chan struct{})
 	go func() {
@@ -191,11 +198,38 @@ func main() {
 				logger.Error().Err(closeErr).Msg("http close failed")
 			}
 		}
+		stopGRPC := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(stopGRPC)
+		}()
+		select {
+		case <-stopGRPC:
+		case <-shutdownCtx.Done():
+			grpcServer.Stop()
+			<-stopGRPC
+		}
 	}()
 
+	serverErrs := make(chan error, 2)
 	logger.Info().Str("addr", cfg.HTTPAddr).Msg("starting pds http server")
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Fatal().Err(err).Msg("http server failed")
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErrs <- err
+		}
+	}()
+	logger.Info().Str("addr", cfg.GRPCAddr).Msg("starting pds grpc server")
+	go func() {
+		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			serverErrs <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-serverErrs:
+		logger.Error().Err(err).Msg("server failed")
+		stop()
 	}
 	<-shutdownDone
 	stopSinks()

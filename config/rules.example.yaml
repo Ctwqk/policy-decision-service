@@ -21,3 +21,11 @@ rules:
     on_match:
       verdict: block
       code: title_blocked_keyword
+
+  - id: burst_publish_feature_flag
+    type: cel
+    enabled: true
+    expr: "action.type == 'publish' && features.publishes_5m >= 3 && !degraded.feature_provider"
+    on_match:
+      verdict: flag
+      code: publishing_burst
