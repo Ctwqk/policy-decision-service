@@ -27,6 +27,13 @@ func (r *Redis) Health(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
 
+func (r *Redis) Client() redis.Cmdable {
+	if r == nil {
+		return nil
+	}
+	return r.client
+}
+
 func (r *Redis) Close() error {
 	if r == nil || r.client == nil {
 		return nil

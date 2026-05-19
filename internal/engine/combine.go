@@ -5,6 +5,7 @@ type RuleResult struct {
 	Matched bool
 	Verdict Verdict
 	Reason  Reason
+	Err     error
 }
 
 func Combine(results []RuleResult) DecideResponse {

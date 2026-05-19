@@ -44,3 +44,18 @@ type DecideResponse struct {
 	RulesVersion   string   `json:"rules_version"`
 	LatencyMS      int64    `json:"latency_ms"`
 }
+
+type AuditRecord struct {
+	DecisionID     string
+	ActorID        string
+	ActionType     string
+	Platform       string
+	Verdict        Verdict
+	Score          float64
+	Reasons        []Reason
+	EvaluatedRules []string
+	Request        DecideRequest
+	LatencyUS      int64
+	RulesVersion   string
+	Client         string
+}

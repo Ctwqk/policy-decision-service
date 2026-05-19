@@ -12,6 +12,7 @@ import (
 	"github.com/Ctwqk/policy-decision-service/internal/api"
 	"github.com/Ctwqk/policy-decision-service/internal/config"
 	"github.com/Ctwqk/policy-decision-service/internal/engine"
+	"github.com/Ctwqk/policy-decision-service/internal/rules"
 	"github.com/Ctwqk/policy-decision-service/internal/store"
 	"github.com/Ctwqk/policy-decision-service/internal/telemetry"
 )
@@ -38,8 +39,21 @@ func main() {
 		}
 	}()
 
+	snapshot, err := rules.LoadFile(cfg.RulesPath, rules.LoaderOptions{
+		Redis: redisStore.Client(),
+	})
+	if err != nil {
+		logger.Fatal().Err(err).Str("path", cfg.RulesPath).Msg("rules load failed")
+	}
+	decisionEngine := engine.NewRuleEngine(snapshot.Version, snapshot.Rules)
+	if postgres != nil {
+		auditWriter := store.NewAuditWriter(postgres.Pool(), cfg.AuditQueueSize, cfg.AuditBatchSize)
+		go auditWriter.Run(ctx)
+		decisionEngine.WithAuditSink(auditWriter)
+	}
+
 	router := api.NewRouter(api.Dependencies{
-		Engine: engine.NewAllowEngine("bootstrap"),
+		Engine: decisionEngine,
 		Ready: func(ctx context.Context) error {
 			if pgErr != nil {
 				return pgErr

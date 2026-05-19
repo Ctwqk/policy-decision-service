@@ -26,6 +26,13 @@ func (p *Postgres) Health(ctx context.Context) error {
 	return p.pool.Ping(ctx)
 }
 
+func (p *Postgres) Pool() *pgxpool.Pool {
+	if p == nil {
+		return nil
+	}
+	return p.pool
+}
+
 func (p *Postgres) Close() {
 	if p != nil && p.pool != nil {
 		p.pool.Close()

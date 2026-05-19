@@ -1,5 +1,23 @@
 version: 1
 defaults:
   on_eval_error: allow
-rules: []
+rules:
+  - id: rate_limit_publish_hourly
+    type: rate_limit
+    enabled: true
+    scope: actor
+    action: publish_video
+    window: 1h
+    limit: 2
+    on_exceed:
+      verdict: block
+      code: hourly_publish_quota_exceeded
 
+  - id: title_keyword_blocklist
+    type: keyword_match
+    enabled: true
+    field: content.title
+    keywords_file: blocklist.example.txt
+    on_match:
+      verdict: block
+      code: title_blocked_keyword
