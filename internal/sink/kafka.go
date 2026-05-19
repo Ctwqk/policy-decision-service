@@ -100,16 +100,24 @@ func (s *KafkaDecisionSink) Run(ctx context.Context) {
 			return
 		case record := <-s.queue:
 			s.updateQueueDepth()
+			if ctx.Err() != nil {
+				s.drain(record)
+				return
+			}
 			s.publishAndCount(ctx, record)
 			s.updateQueueDepth()
 		}
 	}
 }
 
-func (s *KafkaDecisionSink) drain() {
+func (s *KafkaDecisionSink) drain(initial ...engine.AuditRecord) {
 	queued := len(s.queue)
 	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
+	for _, record := range initial {
+		s.publishAndCount(drainCtx, record)
+		s.updateQueueDepth()
+	}
 	for i := 0; i < queued; i++ {
 		select {
 		case record := <-s.queue:

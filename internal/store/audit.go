@@ -98,7 +98,8 @@ INSERT INTO pds.decisions (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7::jsonb,
   $8, $9::jsonb, $10, $11, $12
-)`,
+)
+ON CONFLICT (id) DO NOTHING`,
 			record.DecisionID,
 			record.ActorID,
 			record.ActionType,

@@ -14,22 +14,31 @@ import (
 )
 
 type recordingPublisher struct {
-	mu        sync.Mutex
-	payloads  [][]byte
-	err       error
-	published chan struct{}
+	mu                   sync.Mutex
+	payloads             [][]byte
+	err                  error
+	published            chan struct{}
+	failCanceledCtx      bool
+	canceledCtxPublishes int
 }
 
 func (p *recordingPublisher) Publish(ctx context.Context, topic string, key []byte, value []byte) error {
 	p.mu.Lock()
 	p.payloads = append(p.payloads, append([]byte(nil), value...))
 	published := p.published
+	ctxErr := ctx.Err()
+	if ctxErr != nil {
+		p.canceledCtxPublishes++
+	}
 	p.mu.Unlock()
 	if published != nil {
 		select {
 		case published <- struct{}{}:
 		default:
 		}
+	}
+	if p.failCanceledCtx && ctxErr != nil {
+		return ctxErr
 	}
 	return p.err
 }
@@ -53,6 +62,12 @@ func (p *recordingPublisher) count() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.payloads)
+}
+
+func (p *recordingPublisher) canceledContextPublishes() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.canceledCtxPublishes
 }
 
 func TestKafkaDecisionSinkSerializesDecisionEvent(t *testing.T) {
@@ -83,17 +98,22 @@ func TestKafkaDecisionSinkDropsWhenQueueFull(t *testing.T) {
 }
 
 func TestKafkaDecisionSinkDrainsQueuedRecordsOnCancel(t *testing.T) {
-	publisher := &recordingPublisher{}
-	sink := NewKafkaDecisionSink(KafkaDecisionSinkConfig{Topic: "pds.decisions.v1", QueueSize: 2, Publisher: publisher})
-	ctx, cancel := context.WithCancel(context.Background())
-	sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "one", ActorID: "actor-1"})
-	sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "two", ActorID: "actor-2"})
+	for i := 0; i < 100; i++ {
+		publisher := &recordingPublisher{failCanceledCtx: true}
+		sink := NewKafkaDecisionSink(KafkaDecisionSinkConfig{Topic: "pds.decisions.v1", QueueSize: 2, Publisher: publisher})
+		ctx, cancel := context.WithCancel(context.Background())
+		sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "one", ActorID: "actor-1"})
+		sink.Enqueue(context.Background(), engine.AuditRecord{DecisionID: "two", ActorID: "actor-2"})
 
-	cancel()
-	sink.Run(ctx)
+		cancel()
+		sink.Run(ctx)
 
-	if publisher.count() != 2 {
-		t.Fatalf("expected queued records to drain on cancel, got %d", publisher.count())
+		if publisher.count() != 2 {
+			t.Fatalf("expected queued records to drain on cancel, got %d", publisher.count())
+		}
+		if publisher.canceledContextPublishes() != 0 {
+			t.Fatalf("expected drain not to publish with canceled service context, got %d canceled publishes", publisher.canceledContextPublishes())
+		}
 	}
 }
 
