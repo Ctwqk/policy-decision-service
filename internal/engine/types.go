@@ -29,6 +29,25 @@ type DecideRequest struct {
 	RequestID string         `json:"-"`
 }
 
+type ActorFeatures struct {
+	ActorID        string `json:"actor_id,omitempty"`
+	Publishes5M    int64  `json:"publishes_5m"`
+	Publishes1H    int64  `json:"publishes_1h"`
+	Publishes24H   int64  `json:"publishes_24h"`
+	Blocks24H      int64  `json:"blocks_24h"`
+	Flags7D        int64  `json:"flags_7d"`
+	CommentBurst1M int64  `json:"comment_burst_1m"`
+	AsOf           string `json:"as_of,omitempty"`
+	FromCache      bool   `json:"from_cache"`
+}
+
+type EvalState struct {
+	Request          DecideRequest
+	Features         ActorFeatures
+	FeatureDegraded  bool
+	DegradedWarnings []string
+}
+
 type Reason struct {
 	Code   string `json:"code"`
 	Rule   string `json:"rule,omitempty"`
@@ -36,13 +55,14 @@ type Reason struct {
 }
 
 type DecideResponse struct {
-	DecisionID     string   `json:"decision_id"`
-	Verdict        Verdict  `json:"verdict"`
-	Score          float64  `json:"score"`
-	Reasons        []Reason `json:"reasons"`
-	EvaluatedRules []string `json:"evaluated_rules"`
-	RulesVersion   string   `json:"rules_version"`
-	LatencyMS      int64    `json:"latency_ms"`
+	DecisionID     string         `json:"decision_id"`
+	Verdict        Verdict        `json:"verdict"`
+	Score          float64        `json:"score"`
+	Reasons        []Reason       `json:"reasons"`
+	EvaluatedRules []string       `json:"evaluated_rules"`
+	RulesVersion   string         `json:"rules_version"`
+	LatencyMS      int64          `json:"latency_ms"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 type AuditRecord struct {

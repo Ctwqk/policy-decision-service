@@ -74,7 +74,8 @@ func (r *RateLimitRule) ID() string {
 	return r.id
 }
 
-func (r *RateLimitRule) Evaluate(ctx context.Context, req engine.DecideRequest) (engine.RuleResult, error) {
+func (r *RateLimitRule) Evaluate(ctx context.Context, state engine.EvalState) (engine.RuleResult, error) {
+	req := state.Request
 	if r.action != "" && req.Action.Type != r.action {
 		return engine.RuleResult{RuleID: r.id, Matched: false, Verdict: engine.VerdictAllow}, nil
 	}

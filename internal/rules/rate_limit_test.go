@@ -37,7 +37,7 @@ func TestRateLimitRuleBlocksWhenLimitExceeded(t *testing.T) {
 		Action:  engine.ActionContext{Type: "publish_video"},
 	}
 	for i := 0; i < 2; i++ {
-		result, err := rule.Evaluate(context.Background(), req)
+		result, err := rule.Evaluate(context.Background(), engine.EvalState{Request: req})
 		if err != nil {
 			t.Fatalf("evaluate %d: %v", i, err)
 		}
@@ -46,7 +46,7 @@ func TestRateLimitRuleBlocksWhenLimitExceeded(t *testing.T) {
 		}
 	}
 
-	result, err := rule.Evaluate(context.Background(), req)
+	result, err := rule.Evaluate(context.Background(), engine.EvalState{Request: req})
 	if err != nil {
 		t.Fatalf("evaluate exceeded: %v", err)
 	}
@@ -75,9 +75,11 @@ func TestRateLimitRuleIgnoresOtherActions(t *testing.T) {
 		t.Fatalf("new rate limit rule: %v", err)
 	}
 
-	result, err := rule.Evaluate(context.Background(), engine.DecideRequest{
-		ActorID: "actor-1",
-		Action:  engine.ActionContext{Type: "post_comment"},
+	result, err := rule.Evaluate(context.Background(), engine.EvalState{
+		Request: engine.DecideRequest{
+			ActorID: "actor-1",
+			Action:  engine.ActionContext{Type: "post_comment"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)

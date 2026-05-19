@@ -21,10 +21,12 @@ func TestKeywordRuleMatchesConfiguredField(t *testing.T) {
 		t.Fatalf("new keyword rule: %v", err)
 	}
 
-	result, err := rule.Evaluate(context.Background(), engine.DecideRequest{
-		ActorID: "actor-1",
-		Action:  engine.ActionContext{Type: "publish_video"},
-		Content: engine.ContentContext{Title: "A BLOCKED phrase appears"},
+	result, err := rule.Evaluate(context.Background(), engine.EvalState{
+		Request: engine.DecideRequest{
+			ActorID: "actor-1",
+			Action:  engine.ActionContext{Type: "publish_video"},
+			Content: engine.ContentContext{Title: "A BLOCKED phrase appears"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
@@ -48,10 +50,12 @@ func TestKeywordRuleWithEmptyKeywordsDoesNotMatch(t *testing.T) {
 		t.Fatalf("new keyword rule: %v", err)
 	}
 
-	result, err := rule.Evaluate(context.Background(), engine.DecideRequest{
-		ActorID: "actor-1",
-		Action:  engine.ActionContext{Type: "publish_video"},
-		Content: engine.ContentContext{Title: "anything"},
+	result, err := rule.Evaluate(context.Background(), engine.EvalState{
+		Request: engine.DecideRequest{
+			ActorID: "actor-1",
+			Action:  engine.ActionContext{Type: "publish_video"},
+			Content: engine.ContentContext{Title: "anything"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)

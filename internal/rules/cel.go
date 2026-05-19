@@ -31,6 +31,8 @@ func NewCELRule(cfg CELRuleConfig) (*CELRule, error) {
 		cel.Variable("action", cel.DynType),
 		cel.Variable("content", cel.DynType),
 		cel.Variable("context", cel.DynType),
+		cel.Variable("features", cel.DynType),
+		cel.Variable("degraded", cel.DynType),
 	)
 	if err != nil {
 		return nil, err
@@ -50,17 +52,20 @@ func (r *CELRule) ID() string {
 	return r.id
 }
 
-func (r *CELRule) Evaluate(ctx context.Context, req engine.DecideRequest) (engine.RuleResult, error) {
+func (r *CELRule) Evaluate(ctx context.Context, state engine.EvalState) (engine.RuleResult, error) {
 	select {
 	case <-ctx.Done():
 		return engine.RuleResult{}, ctx.Err()
 	default:
 	}
+	req := state.Request
 	out, _, err := r.program.Eval(map[string]any{
-		"actor":   actorActivation(req),
-		"action":  map[string]any{"type": req.Action.Type, "platform": req.Action.Platform},
-		"content": map[string]any{"title": req.Content.Title, "description": req.Content.Description, "duration_s": req.Content.DurationS, "tags": req.Content.Tags},
-		"context": req.Context,
+		"actor":    actorActivation(req),
+		"action":   map[string]any{"type": req.Action.Type, "platform": req.Action.Platform},
+		"content":  map[string]any{"title": req.Content.Title, "description": req.Content.Description, "duration_s": req.Content.DurationS, "tags": req.Content.Tags},
+		"context":  req.Context,
+		"features": featuresActivation(state.Features),
+		"degraded": map[string]any{"feature_provider": state.FeatureDegraded},
 	})
 	if err != nil {
 		return engine.RuleResult{}, err
@@ -75,6 +80,18 @@ func (r *CELRule) Evaluate(ctx context.Context, req engine.DecideRequest) (engin
 		Verdict: r.onMatch.Verdict,
 		Reason:  engine.Reason{Code: r.onMatch.Code, Rule: r.id},
 	}, nil
+}
+
+func featuresActivation(features engine.ActorFeatures) map[string]any {
+	return map[string]any{
+		"publishes_5m":     features.Publishes5M,
+		"publishes_1h":     features.Publishes1H,
+		"publishes_24h":    features.Publishes24H,
+		"blocks_24h":       features.Blocks24H,
+		"flags_7d":         features.Flags7D,
+		"comment_burst_1m": features.CommentBurst1M,
+		"from_cache":       features.FromCache,
+	}
 }
 
 func actorActivation(req engine.DecideRequest) map[string]any {

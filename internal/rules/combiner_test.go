@@ -25,7 +25,7 @@ func TestCombinerRuleAllRequiresEveryReferencedMatch(t *testing.T) {
 		"rate_limit_publish_daily": {RuleID: "rate_limit_publish_daily", Matched: true, Verdict: engine.VerdictBlock},
 		"new_actor_review":         {RuleID: "new_actor_review", Matched: true, Verdict: engine.VerdictFlag},
 	}
-	result, err := rule.EvaluateWithResults(context.Background(), engine.DecideRequest{}, prior)
+	result, err := rule.EvaluateWithResults(context.Background(), engine.EvalState{}, prior)
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestCombinerRuleAllRequiresEveryReferencedMatch(t *testing.T) {
 	}
 
 	prior["new_actor_review"] = engine.RuleResult{RuleID: "new_actor_review", Matched: false, Verdict: engine.VerdictAllow}
-	result, err = rule.EvaluateWithResults(context.Background(), engine.DecideRequest{}, prior)
+	result, err = rule.EvaluateWithResults(context.Background(), engine.EvalState{}, prior)
 	if err != nil {
 		t.Fatalf("evaluate missing: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCombinerRuleAnyMatchesOneReferencedRule(t *testing.T) {
 		t.Fatalf("new combiner: %v", err)
 	}
 
-	result, err := rule.EvaluateWithResults(context.Background(), engine.DecideRequest{}, map[string]engine.RuleResult{
+	result, err := rule.EvaluateWithResults(context.Background(), engine.EvalState{}, map[string]engine.RuleResult{
 		"a": {RuleID: "a", Matched: false, Verdict: engine.VerdictAllow},
 		"b": {RuleID: "b", Matched: true, Verdict: engine.VerdictBlock},
 	})
@@ -63,5 +63,30 @@ func TestCombinerRuleAnyMatchesOneReferencedRule(t *testing.T) {
 	}
 	if !result.Matched || result.Reason.Code != "any_flag" {
 		t.Fatalf("expected any combo match, got %#v", result)
+	}
+}
+
+func TestCombinerRuleTreatsErroredDependencyAsSkipped(t *testing.T) {
+	rule, err := NewCombinerRule(CombinerRuleConfig{
+		ID:      "combo_with_error",
+		Op:      "all",
+		Of:      []string{"cel_burst"},
+		OnMatch: RuleAction{Verdict: engine.VerdictBlock, Code: "combo_block"},
+	})
+	if err != nil {
+		t.Fatalf("new combiner: %v", err)
+	}
+
+	result, err := rule.EvaluateWithResults(context.Background(), engine.EvalState{}, map[string]engine.RuleResult{
+		"cel_burst": {RuleID: "cel_burst", Matched: true, Verdict: engine.VerdictFlag, Err: context.DeadlineExceeded},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if result.Matched {
+		t.Fatalf("expected errored dependency not to match, got %#v", result)
+	}
+	if result.Reason.Detail != "skipped_dep=cel_burst err=context deadline exceeded" {
+		t.Fatalf("unexpected skipped dependency detail: %#v", result.Reason)
 	}
 }

@@ -147,10 +147,12 @@ rules:
 		t.Fatalf("expected one enabled rule, got %d", len(snapshot.Rules))
 	}
 
-	result, err := snapshot.Rules[0].Evaluate(context.Background(), engine.DecideRequest{
-		ActorID: "actor-1",
-		Action:  engine.ActionContext{Type: "publish_video"},
-		Content: engine.ContentContext{Title: "this is blocked"},
+	result, err := snapshot.Rules[0].Evaluate(context.Background(), engine.EvalState{
+		Request: engine.DecideRequest{
+			ActorID: "actor-1",
+			Action:  engine.ActionContext{Type: "publish_video"},
+			Content: engine.ContentContext{Title: "this is blocked"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("evaluate keyword rule: %v", err)

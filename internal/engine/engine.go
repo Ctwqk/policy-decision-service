@@ -9,13 +9,17 @@ import (
 
 type Rule interface {
 	ID() string
-	Evaluate(context.Context, DecideRequest) (RuleResult, error)
+	Evaluate(context.Context, EvalState) (RuleResult, error)
 }
 
 type ResultAwareRule interface {
 	Rule
 	Dependencies() []string
-	EvaluateWithResults(context.Context, DecideRequest, map[string]RuleResult) (RuleResult, error)
+	EvaluateWithResults(context.Context, EvalState, map[string]RuleResult) (RuleResult, error)
+}
+
+type FeatureProvider interface {
+	GetActorFeatures(context.Context, string) (ActorFeatures, bool)
 }
 
 type AllowEngine struct {
@@ -48,9 +52,10 @@ func (e *AllowEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRe
 }
 
 type RuleEngine struct {
-	rulesVersion string
-	rules        []Rule
-	audit        AuditSink
+	rulesVersion    string
+	rules           []Rule
+	audit           AuditSink
+	featureProvider FeatureProvider
 }
 
 type AuditSink interface {
@@ -70,8 +75,23 @@ func (e *RuleEngine) WithAuditSink(sink AuditSink) *RuleEngine {
 	return e
 }
 
+func (e *RuleEngine) WithFeatureProvider(provider FeatureProvider) *RuleEngine {
+	e.featureProvider = provider
+	return e
+}
+
 func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideResponse, error) {
 	started := time.Now()
+	state := EvalState{Request: req}
+	if e.featureProvider != nil {
+		features, degraded := e.featureProvider.GetActorFeatures(ctx, req.ActorID)
+		state.Features = features
+		state.FeatureDegraded = degraded
+		if degraded {
+			state.DegradedWarnings = append(state.DegradedWarnings, "feature_provider_unavailable")
+		}
+	}
+
 	results := make([]RuleResult, 0, len(e.rules))
 	byID := make(map[string]RuleResult, len(e.rules))
 	for _, rule := range e.rules {
@@ -84,9 +104,9 @@ func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRes
 		var result RuleResult
 		var err error
 		if aware, ok := rule.(ResultAwareRule); ok {
-			result, err = aware.EvaluateWithResults(ctx, req, byID)
+			result, err = aware.EvaluateWithResults(ctx, state, byID)
 		} else {
-			result, err = rule.Evaluate(ctx, req)
+			result, err = rule.Evaluate(ctx, state)
 		}
 		if err != nil {
 			result = RuleResult{RuleID: rule.ID(), Matched: false, Verdict: VerdictAllow, Err: err}
@@ -104,6 +124,9 @@ func (e *RuleEngine) Evaluate(ctx context.Context, req DecideRequest) (DecideRes
 	}
 	if response.EvaluatedRules == nil {
 		response.EvaluatedRules = []string{}
+	}
+	if len(state.DegradedWarnings) > 0 {
+		response.Metadata = map[string]any{"warnings": append([]string(nil), state.DegradedWarnings...)}
 	}
 	if e.audit != nil {
 		e.audit.Enqueue(ctx, AuditRecord{

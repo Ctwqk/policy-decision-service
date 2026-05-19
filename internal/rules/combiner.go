@@ -44,11 +44,11 @@ func (r *CombinerRule) Dependencies() []string {
 	return append([]string(nil), r.of...)
 }
 
-func (r *CombinerRule) Evaluate(ctx context.Context, req engine.DecideRequest) (engine.RuleResult, error) {
-	return r.EvaluateWithResults(ctx, req, nil)
+func (r *CombinerRule) Evaluate(ctx context.Context, state engine.EvalState) (engine.RuleResult, error) {
+	return r.EvaluateWithResults(ctx, state, nil)
 }
 
-func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.DecideRequest, prior map[string]engine.RuleResult) (engine.RuleResult, error) {
+func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.EvalState, prior map[string]engine.RuleResult) (engine.RuleResult, error) {
 	select {
 	case <-ctx.Done():
 		return engine.RuleResult{}, ctx.Err()
@@ -59,10 +59,15 @@ func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.DecideR
 	}
 
 	matchedCount := 0
+	skipped := make([]string, 0)
 	for _, ref := range r.of {
 		result, ok := prior[ref]
 		if !ok {
 			return engine.RuleResult{}, errors.New("combiner dependency has not been evaluated")
+		}
+		if result.Err != nil {
+			skipped = append(skipped, "skipped_dep="+ref+" err="+result.Err.Error())
+			continue
 		}
 		if result.Matched {
 			matchedCount++
@@ -74,12 +79,17 @@ func (r *CombinerRule) EvaluateWithResults(ctx context.Context, _ engine.DecideR
 		matched = matchedCount > 0
 	}
 	if !matched {
-		return engine.RuleResult{RuleID: r.id, Matched: false, Verdict: engine.VerdictAllow}, nil
+		return engine.RuleResult{
+			RuleID:  r.id,
+			Matched: false,
+			Verdict: engine.VerdictAllow,
+			Reason:  engine.Reason{Rule: r.id, Detail: strings.Join(skipped, "; ")},
+		}, nil
 	}
 	return engine.RuleResult{
 		RuleID:  r.id,
 		Matched: true,
 		Verdict: r.onMatch.Verdict,
-		Reason:  engine.Reason{Code: r.onMatch.Code, Rule: r.id},
+		Reason:  engine.Reason{Code: r.onMatch.Code, Rule: r.id, Detail: strings.Join(skipped, "; ")},
 	}, nil
 }

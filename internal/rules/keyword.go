@@ -44,12 +44,13 @@ func (r *KeywordRule) ID() string {
 	return r.id
 }
 
-func (r *KeywordRule) Evaluate(ctx context.Context, req engine.DecideRequest) (engine.RuleResult, error) {
+func (r *KeywordRule) Evaluate(ctx context.Context, state engine.EvalState) (engine.RuleResult, error) {
 	select {
 	case <-ctx.Done():
 		return engine.RuleResult{}, ctx.Err()
 	default:
 	}
+	req := state.Request
 	if len(r.keywords) == 0 {
 		return engine.RuleResult{RuleID: r.id, Matched: false, Verdict: engine.VerdictAllow}, nil
 	}
