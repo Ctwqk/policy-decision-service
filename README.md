@@ -1,6 +1,37 @@
 # Policy Decision Service
 
-Policy Decision Service (PDS) evaluates publication and moderation requests with deterministic rules over HTTP and gRPC. It can enrich decisions with VideoProcess actor features, write audit records, publish Kafka decision events, and reload rules without restarting the process.
+A Go-based pre-flight risk gate for platform operations. PDS evaluates publication and moderation requests against a hot-reloadable rule set and returns an `allow` / `flag` / `block` verdict with reason codes, matched rules, and a rules-version hash for auditability.
+
+PDS is part of a closed-loop risk control pipeline together with [`Ctwqk/videoprocess`](https://github.com/Ctwqk/videoprocess) (the calling platform) and [`Ctwqk/vp-feature-aggregator`](https://github.com/Ctwqk/vp-feature-aggregator) (the Kafka consumer that builds the actor feature windows PDS rules read from).
+
+## Architecture At A Glance
+
+```
+HTTP (chi) / gRPC (google.golang.org/grpc)
+            │
+            ▼
+   engine.Evaluate(ctx, req)
+            │ fan-out per rule, combined by precedence
+            │ block > flag > allow
+            ▼
+ ┌────────┬──────────────┬─────────────────┬──────────┐
+ │ rate   │ keyword      │ CEL expression  │ combiner │
+ │ limit  │ (Aho-Corasick│ (google/cel-go) │ (all/any │
+ │(Redis) │  multi-match)│ over features.* │  + topo) │
+ │        │              │  + actor.*      │          │
+ └────────┴──────────────┴─────────────────┴──────────┘
+
+   audit  ──▶ Postgres (pds.decisions, append-only)
+   events ──▶ Kafka topic pds.decisions.v1 (async, bounded queue)
+   metrics──▶ /metrics (10 Prometheus collectors)
+```
+
+Key design choices:
+
+- **Rules-as-data**: YAML loaded from a ConfigMap, reloadable via `POST /v1/admin/reload` or `SIGHUP`.
+- **Fail-open at every boundary**: rule eval errors, feature-provider unavailability, Kafka sink overflow, and audit write failures all degrade to "allow" with explicit warning metadata and a Prometheus counter — the risk gate cannot become a single point of failure for the calling platform.
+- **CEL over typed activation**: rules can reference `actor.*` (static actor metadata from the request context) and `features.*` (Kafka-derived sliding-window counters from the aggregator), with a `degraded.feature_provider` flag so rules can skip behavior-derived checks when feature lookup failed instead of treating zero counters as truth.
+- **Combiner dependency-error provenance**: when a combiner sees a dependency rule that errored, it records `skipped_dep=<id> status=dependency_error` in the decision's `Reason.Detail` and increments `pds_combiner_dependency_errors_total` so the silently fail-open behavior is observable.
 
 ## Quickstart
 
