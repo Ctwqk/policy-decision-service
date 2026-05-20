@@ -9,10 +9,10 @@ import (
 )
 
 type KeywordRule struct {
-	id       string
-	field    string
-	keywords []string
-	onMatch  RuleAction
+	id      string
+	field   string
+	matcher *ahoMatcher
+	onMatch RuleAction
 }
 
 func NewKeywordRule(cfg KeywordRuleConfig) (*KeywordRule, error) {
@@ -33,10 +33,10 @@ func NewKeywordRule(cfg KeywordRuleConfig) (*KeywordRule, error) {
 		}
 	}
 	return &KeywordRule{
-		id:       cfg.ID,
-		field:    cfg.Field,
-		keywords: keywords,
-		onMatch:  cfg.OnMatch,
+		id:      cfg.ID,
+		field:   cfg.Field,
+		matcher: newAhoMatcher(keywords),
+		onMatch: cfg.OnMatch,
 	}, nil
 }
 
@@ -51,7 +51,7 @@ func (r *KeywordRule) Evaluate(ctx context.Context, state engine.EvalState) (eng
 	default:
 	}
 	req := state.Request
-	if len(r.keywords) == 0 {
+	if r.matcher == nil {
 		return engine.RuleResult{RuleID: r.id, Matched: false, Verdict: engine.VerdictAllow}, nil
 	}
 
@@ -63,15 +63,13 @@ func (r *KeywordRule) Evaluate(ctx context.Context, state engine.EvalState) (eng
 		value = req.Content.Description
 	}
 	value = strings.ToLower(value)
-	for _, keyword := range r.keywords {
-		if strings.Contains(value, keyword) {
-			return engine.RuleResult{
-				RuleID:  r.id,
-				Matched: true,
-				Verdict: r.onMatch.Verdict,
-				Reason:  engine.Reason{Code: r.onMatch.Code, Rule: r.id},
-			}, nil
-		}
+	if r.matcher.match(value) {
+		return engine.RuleResult{
+			RuleID:  r.id,
+			Matched: true,
+			Verdict: r.onMatch.Verdict,
+			Reason:  engine.Reason{Code: r.onMatch.Code, Rule: r.id},
+		}, nil
 	}
 	return engine.RuleResult{RuleID: r.id, Matched: false, Verdict: engine.VerdictAllow}, nil
 }
